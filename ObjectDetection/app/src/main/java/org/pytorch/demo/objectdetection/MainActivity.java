@@ -12,9 +12,11 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import android.Manifest;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.graphics.Bitmap;
@@ -22,12 +24,16 @@ import android.graphics.BitmapFactory;
 import android.graphics.Matrix;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.IBinder;
+import android.os.RemoteException;
 import android.provider.MediaStore;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
+
+import com.idaka.objectdetect.IObjectDetect;
 
 import org.pytorch.IValue;
 import org.pytorch.LiteModuleLoader;
@@ -41,13 +47,14 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.InvalidObjectException;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
 
 public class MainActivity extends AppCompatActivity implements Runnable {
     private int mImageIndex = 0;
-    private String[] mTestImages = {"test1.png", "test2.jpg", "test3.png"};
+    private String[] mTestImages = {"221229_064645_14482.jpeg", "test1.png", "test2.jpg", "test3.png"};
 
     private ImageView mImageView;
     private ResultView mResultView;
@@ -56,6 +63,9 @@ public class MainActivity extends AppCompatActivity implements Runnable {
     private Bitmap mBitmap = null;
     private Module mModule = null;
     private float mImgScaleX, mImgScaleY, mIvScaleX, mIvScaleY, mStartX, mStartY;
+
+    private IObjectDetect mService;
+    private ServiceConnection mConnection;
 
     public static String assetFilePath(Context context, String assetName) throws IOException {
         File file = new File(context.getFilesDir(), assetName);
@@ -160,6 +170,23 @@ public class MainActivity extends AppCompatActivity implements Runnable {
 
         mButtonDetect = findViewById(R.id.detectButton);
         mProgressBar = (ProgressBar) findViewById(R.id.progressBar);
+
+        mConnection = new ServiceConnection() {
+            @Override
+            public void onServiceConnected(ComponentName name, IBinder service) {
+                mService = IObjectDetect.Stub.asInterface(service);
+                Log.d("service", "connected");
+            }
+
+            @Override
+            public void onServiceDisconnected(ComponentName name) {
+                mService = null;
+            }
+        };
+        Intent intent = new Intent("com.idaka.objectdetect.IObjectDetect");
+        intent.setClassName("com.idaka.objectdetect", "com.idaka.objectdetect.ObjectDetect");
+        boolean bindResult = bindService(intent, mConnection, Context.BIND_AUTO_CREATE);
+
         mButtonDetect.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 mButtonDetect.setEnabled(false);
@@ -181,8 +208,22 @@ public class MainActivity extends AppCompatActivity implements Runnable {
         });
 
         try {
-            mModule = LiteModuleLoader.load(MainActivity.assetFilePath(getApplicationContext(), "yolov5s.torchscript.ptl"));
-            BufferedReader br = new BufferedReader(new InputStreamReader(getAssets().open("classes.txt")));
+            //mModule = LiteModuleLoader.load(MainActivity.assetFilePath(getApplicationContext(), "yolov5s.torchscript.ptl"));
+            //mModule = LiteModuleLoader.load(MainActivity.assetFilePath(getApplicationContext(), "yolov5s.torchscript"));
+            //mModule = LiteModuleLoader.load(MainActivity.assetFilePath(getApplicationContext(), "yolov5s-opt.torchscript"));
+            //mModule = LiteModuleLoader.load(MainActivity.assetFilePath(getApplicationContext(), "coco.torchscript"));
+            //mModule = LiteModuleLoader.load(MainActivity.assetFilePath(getApplicationContext(), "coco-opt.torchscript"));
+            //mModule = LiteModuleLoader.load(MainActivity.assetFilePath(getApplicationContext(), "vest-epoch-300-img-320.torchscript"));
+            //mModule = LiteModuleLoader.load(MainActivity.assetFilePath(getApplicationContext(), "vest-epoch-300-img-320-opt.torchscript"));
+            //mModule = LiteModuleLoader.load(MainActivity.assetFilePath(getApplicationContext(), "vest-epoch-300-img-640.torchscript"));
+            //mModule = LiteModuleLoader.load(MainActivity.assetFilePath(getApplicationContext(), "vest-epoch-300-img-640-opt.torchscript"));
+            //mModule = LiteModuleLoader.load(MainActivity.assetFilePath(getApplicationContext(), "vest-epoch-3-img-640.torchscript"));
+            //mModule = LiteModuleLoader.load(MainActivity.assetFilePath(getApplicationContext(), "vest-epoch-3-img-640-opt.torchscript"));
+            //BufferedReader br = new BufferedReader(new InputStreamReader(getAssets().open("classes.txt")));
+            mModule = LiteModuleLoader.load(MainActivity.assetFilePath(getApplicationContext(), "best.torchscript"));
+            Log.d("path", MainActivity.assetFilePath(getApplicationContext(), "best.torchscript"));
+            for(String file: getAssets().list("")){ Log.d("asset", file); }
+            BufferedReader br = new BufferedReader(new InputStreamReader(getAssets().open("vest_classes.txt")));
             String line;
             List<String> classes = new ArrayList<>();
             while ((line = br.readLine()) != null) {
@@ -237,11 +278,24 @@ public class MainActivity extends AppCompatActivity implements Runnable {
 
     @Override
     public void run() {
+        float[] rects = new float[60];
+        float[] scores = new float[15];
+        int[] classes = new int[15];
+        try {
+            Log.d("img size", String.format("width %d height %d", mBitmap.getWidth(), mBitmap.getHeight()));
+            int n = mService.detect(mBitmap, 0.5f, rects, scores, classes);
+            for(int i = 0; i < n; i++){
+                Log.d("foo", String.format("rect %f %f %f %f score %f class %d", rects[i*4+0], rects[i*4+1], rects[i*4+2], rects[i*4+3], scores[i], classes[i]));
+            }
+        } catch (RemoteException e) {
+        }
         Bitmap resizedBitmap = Bitmap.createScaledBitmap(mBitmap, PrePostProcessor.mInputWidth, PrePostProcessor.mInputHeight, true);
         final Tensor inputTensor = TensorImageUtils.bitmapToFloat32Tensor(resizedBitmap, PrePostProcessor.NO_MEAN_RGB, PrePostProcessor.NO_STD_RGB);
         IValue[] outputTuple = mModule.forward(IValue.from(inputTensor)).toTuple();
         final Tensor outputTensor = outputTuple[0].toTensor();
+        Log.i("foo", String.format("output tensor shape: %s", java.util.Arrays.toString(outputTensor.shape())));
         final float[] outputs = outputTensor.getDataAsFloatArray();
+        Log.d("nms parameters", String.format("mImgScaleX %f mImgScaleY %f mIvScaleX %f mIvScaleY %f mStartX %f mStartY %f", mImgScaleX, mImgScaleY, mIvScaleX, mIvScaleY, mStartX, mStartY));
         final ArrayList<Result> results =  PrePostProcessor.outputsToNMSPredictions(outputs, mImgScaleX, mImgScaleY, mIvScaleX, mIvScaleY, mStartX, mStartY);
 
         runOnUiThread(() -> {

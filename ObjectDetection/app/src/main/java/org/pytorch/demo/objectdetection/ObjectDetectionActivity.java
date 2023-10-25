@@ -58,6 +58,7 @@ public class ObjectDetectionActivity extends AbstractCameraXActivity<ObjectDetec
     }
 
     private Bitmap imgToBitmap(Image image) {
+        Log.d("imgToBitmap", String.format("width %d height %d", image.getWidth(), image.getHeight()));
         Image.Plane[] planes = image.getPlanes();
         ByteBuffer yBuffer = planes[0].getBuffer();
         ByteBuffer uBuffer = planes[1].getBuffer();
@@ -84,9 +85,12 @@ public class ObjectDetectionActivity extends AbstractCameraXActivity<ObjectDetec
     @WorkerThread
     @Nullable
     protected AnalysisResult analyzeImage(ImageProxy image, int rotationDegrees) {
+        long t = System.currentTimeMillis();
         try {
             if (mModule == null) {
-                mModule = LiteModuleLoader.load(MainActivity.assetFilePath(getApplicationContext(), "yolov5s.torchscript.ptl"));
+                //mModule = LiteModuleLoader.load(MainActivity.assetFilePath(getApplicationContext(), "yolov5s.torchscript.ptl"));
+                //mModule = LiteModuleLoader.load(MainActivity.assetFilePath(getApplicationContext(), "vest-epoch-300-img-640-opt.torchscript"));
+                mModule = LiteModuleLoader.load(MainActivity.assetFilePath(getApplicationContext(), "best.torchscript"));
             }
         } catch (IOException e) {
             Log.e("Object Detection", "Error reading assets", e);
@@ -99,8 +103,11 @@ public class ObjectDetectionActivity extends AbstractCameraXActivity<ObjectDetec
         Bitmap resizedBitmap = Bitmap.createScaledBitmap(bitmap, PrePostProcessor.mInputWidth, PrePostProcessor.mInputHeight, true);
 
         final Tensor inputTensor = TensorImageUtils.bitmapToFloat32Tensor(resizedBitmap, PrePostProcessor.NO_MEAN_RGB, PrePostProcessor.NO_STD_RGB);
+        Log.d("bar", String.format("input %d ms", System.currentTimeMillis() - t));t = System.currentTimeMillis();
         IValue[] outputTuple = mModule.forward(IValue.from(inputTensor)).toTuple();
+        Log.d("bar", String.format("forward %d ms", System.currentTimeMillis() - t));t = System.currentTimeMillis();
         final Tensor outputTensor = outputTuple[0].toTensor();
+        //Log.i("bar", String.format("output tensor shape: %s", java.util.Arrays.toString(outputTensor.shape())));
         final float[] outputs = outputTensor.getDataAsFloatArray();
 
         float imgScaleX = (float)bitmap.getWidth() / PrePostProcessor.mInputWidth;
@@ -109,6 +116,7 @@ public class ObjectDetectionActivity extends AbstractCameraXActivity<ObjectDetec
         float ivScaleY = (float)mResultView.getHeight() / bitmap.getHeight();
 
         final ArrayList<Result> results = PrePostProcessor.outputsToNMSPredictions(outputs, imgScaleX, imgScaleY, ivScaleX, ivScaleY, 0, 0);
+        Log.d("bar", String.format("output %d ms", System.currentTimeMillis() - t));
         return new AnalysisResult(results);
     }
 }

@@ -31,12 +31,12 @@ public class PrePostProcessor {
     static float[] NO_STD_RGB = new float[] {1.0f, 1.0f, 1.0f};
 
     // model input image size
-    static int mInputWidth = 640;
-    static int mInputHeight = 640;
+    static int mInputWidth = 160;//640;
+    static int mInputHeight = 160;//640;
 
     // model output is of size 25200*(num_of_class+5)
-    private static int mOutputRow = 25200; // as decided by the YOLOv5 model for input image of size 640*640
-    private static int mOutputColumn = 85; // left, top, right, bottom, score and 80 class probability
+    private static int mOutputRow = 1575;//25200; // as decided by the YOLOv5 model for input image of size 640*640
+    private static int mOutputColumn = 6; //85; // left, top, right, bottom, score and 80 class probability
     private static float mThreshold = 0.30f; // score above which a detection is generated
     private static int mNmsLimit = 15;
 
@@ -58,7 +58,7 @@ public class PrePostProcessor {
                 new Comparator<Result>() {
                     @Override
                     public int compare(Result o1, Result o2) {
-                        return o1.score.compareTo(o2.score);
+                        return o2.score.compareTo(o1.score);
                     }
                 });
 
